@@ -323,18 +323,16 @@ nature_relerr_to_test = 0.25
 
 index = int(sys.argv[1]) #which simulation set to do, ranges from 0 to 20 inclusive
 
-#rundata_window-2_freq-1_lifetime-25_emis-200_vel-100.pkl
-
 lifetimes_to_test = np.array([5,10,25,50,100,200,500])
-lifetimes_to_test = np.array([25])
+#lifetimes_to_test = np.array([25])
 emis_timescales_to_test = np.array([5,10,25,50,100,200,500]) #Will set long timescale to 1e6 to prevent any effect
 emis_ind = index % 7
 emis_timescales_to_test = emis_timescales_to_test[emis_ind:(emis_ind+1)]
-emis_timescales_to_test = np.array([200])
+#emis_timescales_to_test = np.array([200])
 vel_timescales_to_test = np.array([5,50,100])
 vel_ind = int(np.floor(index/7))
 vel_timescales_to_test = vel_timescales_to_test[vel_ind:(vel_ind+1)]
-vel_timescales_to_test = np.array([100])
+#vel_timescales_to_test = np.array([100])
 #vel_x_noise_to_test = np.array([0.1,0.5,1,5])
 vel_x_noise = 2
 #vel_y_noise_to_test = np.array([0.05,0.25,0.5,2.5])
