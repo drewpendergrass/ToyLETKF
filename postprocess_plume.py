@@ -1,54 +1,35 @@
 import numpy as np
-import scipy.linalg as la
 import pickle
-import sys
+import pandas as pd
+from scipy.stats import linregress
+from sklearn.metrics import mean_squared_error
+from glob import glob
 
-windows_to_test = np.array([2,5,10,25,50,125])
-freq_obs_to_test = [[1],[1,2],[1,2,5],[2,5,10],[5,10,25],[10,25,50]]
-#radii_to_test = np.array(1,2,5,10)
-radius = 5 
-#scaling_inflator_to_test = np.array([0.3,0.5,0.9])
-scalingInflator = 0.9
-#nature_relerr_to_test = np.array([0.01,0.05,0.1,0.25,0.5])
-nature_relerr_to_test = 0.25
+df = pd.DataFrame(columns = ['Window', 'Frequency', 'Lifetime', 'Emistime','Veltime','ConcBias','ConcR2','ConcRMSE','ConcRRMSE','ConcMeanAbsError','ConcMeanAbsPercentError','EmisBias','EmisR2','EmisRMSE','EmisRRMSE','EmisMeanAbsError','EmisMeanAbsPercentError'])
+  
+files_to_open = glob('/n/holyscratch01/jacob_lab/dpendergrass/toyDA/**/rundata_*.pkl', recursive=True)
+for file in files_to_open:
+	with open(file, 'rb') as handle:
+		results = pickle.load(handle)
+	ensmean = np.mean(results['ensemble'],axis=(0,2,3))
+	naturemean = np.mean(results['nature'],axis=(1,2))
+	ConcBias = np.mean(ensmean-naturemean)
+	slope, intercept, r_value, p_value, std_err = linregress(naturemean,ensmean)
+	ConcR2 = r_value**2
+	ConcRMSE = mean_squared_error(naturemean,ensmean,squared=False)
+	ConcRRMSE = ConcRMSE/np.mean(naturemean)
+	ConcMeanAbsError = np.mean(np.abs(ensmean-naturemean))
+	ConcMeanAbsPercentError = 100*(ConcMeanAbsError/np.mean(naturemean))
+	endval = 251
+	ensemismean = np.mean(results['model_emis'], axis=0)[0:endval]
+	natureemis = results['nature_emis'][:,14,14]
+	EmisBias = np.mean(ensemismean-natureemis)
+	slope, intercept, r_value, p_value, std_err = linregress(natureemis,ensemismean)
+	EmisR2 = r_value**2
+	EmisRMSE = mean_squared_error(natureemis,ensemismean,squared=False)
+	EmisRRMSE = EmisRMSE/np.mean(natureemis)
+	EmisMeanAbsError = np.mean(np.abs(ensemismean-natureemis))
+	EmisMeanAbsPercentError = 100*(EmisMeanAbsError/np.mean(natureemis))
+	df = df.append({'Window' : results['window'], 'Frequency' : results['frequency'], 'Lifetime' : results['lifetime'], 'Emistime' : results['emistime'], 'Veltime' : results['veltime'],'ConcBias':ConcBias,'ConcR2':ConcR2,'ConcRMSE':ConcRMSE,'ConcRRMSE':ConcRRMSE,'ConcMeanAbsError':ConcMeanAbsError,'ConcMeanAbsPercentError':ConcMeanAbsPercentError,'EmisBias':EmisBias,'EmisR2':EmisR2,'EmisRMSE':EmisRMSE,'EmisRRMSE':EmisRRMSE,'EmisMeanAbsError':EmisMeanAbsError,'EmisMeanAbsPercentError':EmisMeanAbsPercentError},ignore_index = True)
 
-index = int(sys.argv[1]) #which simulation set to do, ranges from 0 to 20 inclusive
-
-lifetimes_to_test = np.array([5,10,25,50,100,200,500])
-emis_timescales_to_test = np.array([5,10,25,50,100,200,500]) #Will set long timescale to 1e6 to prevent any effect
-emis_ind = index % 7
-emis_timescales_to_test = emis_timescales_to_test[emis_ind:(emis_ind+1)]
-vel_timescales_to_test = np.array([5,50,100])
-vel_ind = int(np.floor(index/7))
-vel_timescales_to_test = vel_timescales_to_test[vel_ind:(vel_ind+1)]
-#vel_x_noise_to_test = np.array([0.1,0.5,1,5])
-vel_x_noise = 2
-#vel_y_noise_to_test = np.array([0.05,0.25,0.5,2.5])
-vel_y_noise = 1
-vel_x_max=10
-vel_y_max=5
-emis_variability = 0.25
-inflation=0.2
-endtime = 250 
-naturebias = 0
-
-
-bias = np.mean(subset['Predicted PM']-subset['Actual PM'])
-medbias = np.median(subset['Predicted PM']-subset['Actual PM'])
-print(f'{country_name} {freqname} Mean bias: {np.round(bias,4)}')
-print(f'{country_name} {freqname} Median bias: {np.round(medbias,4)}')
-pm_abs_errors = np.abs(subset['Actual PM']-subset['Predicted PM'])
-print(f'{country_name} {freqname} Mean abs. err.: {np.round(np.mean(pm_abs_errors),4)}')
-print(f'{country_name} {freqname} Med. abs. err.: {np.round(np.median(pm_abs_errors),4)}')
-mape_raw = 100 * (pm_abs_errors / subset['Actual PM'])
-mape = np.mean(mape_raw[np.isfinite(mape_raw)])
-print(f'{country_name} {freqname} Mean abs. % err.: {np.round(mape,4)}%')
-medape = np.median(mape_raw[np.isfinite(mape_raw)])
-print(f'{country_name} {freqname} Med. abs. % err: {np.round(medape,4)}%')
-slope, intercept, r_value, p_value, std_err = linregress(subset['Actual PM'],subset['Predicted PM'])
-print(f'{country_name} {freqname} R: {np.round(r_value,5)}')
-print(f'{country_name} {freqname} R2: {np.round(r_value**2,5)}')
-rmse = mean_squared_error(subset['Actual PM'],subset['Predicted PM'],squared=False)
-print(f'{country_name} {freqname} RMSE: {np.round(rmse,4)}')
-rrmse = 100*(rmse/np.mean(subset['Actual PM']))
-print(f'{country_name} {freqname} RRMSE (normalized by observed mean): {np.round(rrmse,4)}%')
+df.to_csv('/n/holyscratch01/jacob_lab/dpendergrass/toyDA/accuracy_output.csv')
