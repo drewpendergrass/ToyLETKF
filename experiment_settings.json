@@ -1,0 +1,70 @@
+{
+	"h": {
+		"value":15,
+		"units":"m",
+		"description":"Grid spacing (meters)"
+	},
+	"delta_t":{
+		"value":1,
+		"units":"s",
+		"description":"Timestep (seconds)"
+	},
+	"diffusion_const":{
+		"value":0.01,
+		"units":"m^2 s^-1",
+		"description":"Diffusion constant"
+	},
+	"n_x":{
+		"value":30,
+		"units":"1",
+		"description":"Number of discretized x coordinates"
+	},
+	"n_y":{
+		"value":30,
+		"units":"1",
+		"description":"Number of discretized y coordinates"
+	},
+	"n_ens":{
+		"value":32,
+		"units":"1",
+		"description":"Number of ensemble members"
+	},
+	"emis_field":{
+		"value":[
+			{
+				"location":[14,14],
+				"value":10
+			}
+		],
+		"interpret_as" : "location"
+	},
+	"radius": {
+		"value":5,
+		"units":"h",
+		"description":"Radius for localized assimilation"
+	},
+	"window": {
+		"value":10,
+		"units":"delta t",
+		"description":"Assimilation window time"
+	},
+	"frequency": {
+		"value":5,
+		"units":"delta t",
+		"description":"Seconds between observation"
+	},
+	"scalingInflator": {
+		"value":0.3,
+		"units":"1",
+		"description":"Inflate scalings to X initial standard deviation"
+	},
+	"nature_err": {
+		"value":0.25,
+		"units":"1",
+		"description":"Error",
+		"type":"relative"
+	}
+
+
+
+}
