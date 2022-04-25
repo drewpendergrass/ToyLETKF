@@ -2,8 +2,10 @@ import numpy as np
 import scipy.linalg as la
 import pickle
 import sys
-import assimilation_tools as at
+import helper_tools as ht
 
+
+##TODO: rearrange for new structure
 
 base_emis_field = np.zeros((n_x,n_y))
 #base_emis_field = 10*np.random.rand(n_x,n_y)

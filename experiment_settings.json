@@ -30,12 +30,22 @@
 		"description":"Number of ensemble members"
 	},
 	"emis_field":{
-		"value":[
-			{
-				"location":[14,14],
-				"value":10
-			}
-		],
+		"value":{
+			"location":[
+				[10,10],
+				[10,20],
+				[20,10],
+				[20,20]
+			],
+			"value":[
+				10,
+				15,
+				5,
+				20
+			]
+		},
+		"units" : "nan",
+		"description" : "information necessary for construction of emissions field",
 		"interpret_as" : "location"
 	},
 	"radius": {
@@ -62,9 +72,100 @@
 		"value":0.25,
 		"units":"1",
 		"description":"Error",
-		"type":"relative"
+		"type":"relative",
+		"isCorrelated" : "True",
+		"corrDist" : 15
+	},
+	"nature_bias": {
+		"value":0,
+		"units":"kg s-1",
+		"description":"Bias of observing system"
+	},
+	"lifetime_nature": {
+		"value":25,
+		"units":"delta t",
+		"description":"Species chemical lifetime in nature runs"
+	},
+	"lifetime_model": {
+		"value":25,
+		"units":"delta t",
+		"description":"Species chemical lifetime in model runs"
+	},
+	"gamma": {
+		"value":0.1,
+		"units":"1",
+		"description":"Regularization constant"
+	},
+	"emis_timescales" : {
+		"value" : [
+			50,
+			40,
+			30,
+			20,
+			10
+		],
+		"units" : "delta t",
+		"description" : "Timescale of fourier components of emissions"
+	},
+	"emis_amplitudes" : {
+		"value" : [
+			5,
+			4,
+			3,
+			2,
+			1
+		],
+		"units" : "kg s^-1",
+		"description" : "Unweighted amplitude of each fourier component"
+	},
+	"emis_variability" : {
+		"value" : 0.25,
+		"units" : "%",
+		"description" : "fraction by which emis field varies relative to base"
+	},
+	"emis_model_type" : {
+		"value" : "False",
+		"units" : "bool",
+		"description" : "Should we use a constant emissions model ('const') or n fourier coefficients (int)?"
+	},
+	"velocity_data" : {
+		"value" : {
+			"function" : "vel",
+			"parameters" : {
+				"vel_x_noise" : 2,
+				"vel_y_noise" : 1,
+				"vel_x_max" : 10,
+				"vel_y_max" : 5,
+				"vel_x_timescale" : 100,
+				"vel_y_timescale" : 100
+			}
+		},
+		"units":"nan",
+		"description" : "information necessary to construct velocity vector field",
+		"noisy_nature" : "True",
+		"nature_err_corr" : {
+			"useCorrelatedError" : "True",
+			"correlationDistance" : 10,
+		},
+		"noisy_model" : "False",
+		"model_err_corr" : {
+			"useCorrelatedError" : "False",
+			"correlationDistance" : 10,
+		},
+	},
+	"inflation" : {
+		"value" : 0.2,
+		"units" : "%",
+		"description" : "Default LETKF inflation"
+	},
+	"endtime" : {
+		"value" : 250,
+		"units" : "delta t",
+		"description" : "End of simulation"
+	},
+	"halg" : {
+		"value" : "all",
+		"units" : "nan",
+		"description" : "name of H alg"
 	}
-
-
-
 }

@@ -7,7 +7,7 @@ import sys
 #Observation operator class
 
 class Obs_Operator(object):
-	def __init__(self,nature,model_ens,timevals, obs_times, distmat, nature_bias=0, nature_err=1, halg = 'all',errtype='absolute'):
+	def __init__(self,nature,model_ens,timevals, obs_times, distmat, nature_bias=0, nature_err=1, halg = 'all',errtype='absolute',n_x=30,n_y=30):
 		self.nature = nature
 		self.model_ens = model_ens
 		self.timevals = timevals
@@ -21,6 +21,17 @@ class Obs_Operator(object):
 		if self.halg=='all':
 			self.xinds = np.tile(np.arange(0,n_x),n_y)
 			self.yinds = np.repeat(np.arange(0,n_x),n_y)
+		#We only observe the mean of the entire state.
+		elif self.halg=='one':
+			self.xinds = np.array([int(np.round(np.mean([0,n_x-1])))])
+			self.yinds = np.array([int(np.round(np.mean([0,n_y-1])))])
+		#List of tuple coordinates, which we observe
+		elif (type(self.halg) is list) and (type(self.halg[0]) is list):
+			self.xinds = np.array([val[0] for val in self.halg])
+			self.yinds = np.array([val[1] for val in self.halg])
+		#Observations aggregated to grid of specified dimension
+		elif (type(self.halg) is list) and (type(self.halg[0]) is int):
+			pass
 		self.obsMean,self.obsPert,self.obsDiff,self.obsErr=self.obsMeanPertDiff()
 	#Model ens has same times as in nature.
 	def obsMeanPertDiff(self):
@@ -41,6 +52,10 @@ class Obs_Operator(object):
 	def H(self,conc2D, allowErrors=False):
 		if self.halg=='all':
 			to_return = conc2D.flatten()
+		if self.halg=='one':
+			to_return = np.array([np.mean(conc2D)])
+		if (type(self.halg) is list) and (type(self.halg[0]) is list):
+			to_return = conc2D[self.xinds,self.yinds]
 		if (self.bias is not None) and (self.err is not None) and allowErrors:
 			if self.errtype=='absolute':
 				errorvec = np.repeat(self.err, len(to_return))
@@ -48,6 +63,7 @@ class Obs_Operator(object):
 			elif self.errtype=='relative':
 				biasvec = to_return*self.bias
 				errorvec = to_return*self.err
+				errorvec[errorvec<=0.01] = 0.01 #so that we can invert
 				to_return += np.random.normal(biasvec, errorvec, np.shape(to_return))
 			else:
 				raise ValueError('Error type must be relative or absolute.')
@@ -66,7 +82,11 @@ class Obs_Operator(object):
 #Assimilator class
 
 class Assimilator(object):
-	def __init__(self,nature,model_ens,timevals, obs_times,emissions,distmat,nature_bias=0, nature_err=1, halg = 'all',errtype='absolute'):
+	def __init__(self,settings_golem,nature,model_ens,timevals, obs_times,emissions):
+		n_x,n_y,nature_bias,nature_err,halg = settings_golem.getSetting(['n_x','n_y','nature_bias','nature_err','halg'])
+		errtype = settings_golem.settings["nature_err"]["type"]
+		self.settings_golem = settings_golem
+		self.distmat = settings_golem.getDistMat()
 		self.xinds = np.tile(np.tile(np.arange(0,n_x),n_y),2) #flatten concentrations for first half, emissions
 		self.yinds = np.tile(np.repeat(np.arange(0,n_x),n_y),2)
 		emissions = np.stack(emissions)
@@ -78,8 +98,7 @@ class Assimilator(object):
 			self.ens_pert[i,:] = background-self.ens_mean
 			self.backgroundEnsemble[i,:] = background
 		self.nature_err = nature_err
-		self.distmat = distmat
-		self.obs_op = Obs_Operator(nature,model_ens,timevals, obs_times, self.distmat, nature_bias, nature_err, halg)
+		self.obs_op = Obs_Operator(nature,model_ens,timevals, obs_times, self.distmat, nature_bias, nature_err, halg,errtype, n_x,n_y)
 	def getMatchInds(self,radius,xind,yind):
 		inds_in_range = np.where(self.distmat[xind,yind,:,:]<=radius)
 		matchinds = np.concatenate([np.where((xi==self.xinds) & (yi==self.yinds))[0] for xi,yi in zip(*inds_in_range)])
@@ -89,13 +108,15 @@ class Assimilator(object):
 	def subsetByLoc(self,matchinds,radius,xind,yind):
 		to_return = [self.ens_mean[matchinds],self.ens_pert[:,matchinds],self.backgroundEnsemble[:,matchinds]]+self.obs_op.subsetByLoc(radius,xind,yind)
 		return to_return
-	def LETKF(self,radius,inflation,scalingInflator):
+	def LETKF(self):
+		radius,inflation,scalingInflator,n_x,n_y,gamma = self.settings_golem.getSetting(["radius","inflation","scalingInflator","n_x","n_y","gamma"]) 
 		ens_analysis = np.zeros(np.shape(self.ens_pert))
 		for x in range(n_x):
 			for y in range(n_y):
 				matchinds,matchindcolfull,matchindcolsubset = self.getMatchInds(radius,x,y)
 				ensmean,enspert,backgroundEnsemble,obsmean,obspert,obsdiff,obserr = self.subsetByLoc(matchinds,radius,x,y)
 				R = np.diag(obserr**2)
+				R *= gamma**-1 #scale R by inverse gamma
 				C = obspert @ la.inv(R)
 				cyb = C @ np.transpose(obspert)
 				k = np.shape(obspert)[0]
@@ -128,8 +149,9 @@ class Assimilator(object):
 				for i in range(k):
 					ens_analysis[i,matchindcolfull] = analysisEnsemble[i,matchindcolsubset]
 		return ens_analysis
-	def update(self,radius,inflation,scalingInflator):
-		ens_analysis = self.LETKF(radius,inflation,scalingInflator)
+	def update(self):
+		n_ens,n_x,n_y = self.settings_golem.getSetting(["n_ens","n_x","n_y"]) 
+		ens_analysis = self.LETKF()
 		len_ens = np.shape(ens_analysis)[1]
 		ens_conc = ens_analysis[:,0:int(len_ens/2)].reshape((n_ens,n_x,n_y))
 		ens_emis = ens_analysis[:,int(len_ens/2):len_ens].reshape((n_ens,n_x,n_y))

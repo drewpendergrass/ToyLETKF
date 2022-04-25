@@ -1,6 +1,11 @@
 import json
 import numpy as np
 import assimilation_tools as at
+import plume_tools as pt
+import matplotlib.pyplot as plt
+import scipy.stats as ss
+import scipy.spatial.distance as ssd
+
 
 class SettingsGolem(object):
 	def __init__(self, settings_to_override=None):
@@ -11,8 +16,16 @@ class SettingsGolem(object):
 			values = list(settings_to_override.values())
 			for key,value in zip(keys,values):
 				self.settings[key]['value'] = value
+		self.distmat = self.makeDistMat()
+		self.initializeErrorCov()
 	def getSetting(self,key):
-		return self.settings[key]['value']
+		if type(key) is list:
+			to_return = []
+			for val in key:
+				to_return.append(self.settings[val]['value'])
+			return to_return
+		else:
+			return self.settings[key]['value']
 	def makeDistMat(self):
 		n_x = self.getSetting('n_x')
 		n_y = self.getSetting('n_y')
@@ -23,35 +36,149 @@ class SettingsGolem(object):
 					for y2 in range(n_y):
 						distmat[x1,y1,x2,y2] = np.sqrt((x2-x1)**2+(y2-y1)**2)
 		return distmat
+	def initializeErrorCov(self):
+		n_x,n_y = self.getSetting(['n_x','n_y'])
+		self.error_cov = {}
+		if self.settings['nature_err']['isCorrelated'] == "True":
+			correlation_scale = self.settings['nature_err']['corrDist']
+			halg = self.getSetting('halg')
+			if (halg == 'all') or (type(self.halg) is list) and (type(self.halg[0]) is list):
+				cov = self.makeBaseCovMat(n_x,n_y,correlation_scale)
+			elif (type(self.halg) is list) and (type(self.halg[0]) is int):
+				cov = self.makeBaseCovMat(halg[0],halg[1],correlation_scale)
+			else:
+				raise ValueError('Specified halg is incompatible with error covariance structure')
+			self.error_cov['obs'] = cov
+		else:
+			self.error_cov['obs'] = None
+		if (self.settings['velocity_data']['noisy_nature'] == "True") and (self.settings['velocity_data']['nature_err_corr']['useCorrelatedError'] == "True"):
+			correlation_scale = self.settings['velocity_data']['nature_err_corr']['correlationDistance']
+			cov = self.makeBaseCovMat(n_x,n_y,correlation_scale)
+			self.error_cov['nature_vel'] = cov
+		else:
+			self.error_cov['nature_vel'] = None
+		if (self.settings['velocity_data']['noisy_model'] == "True") and (self.settings['velocity_data']['model_err_corr']['useCorrelatedError'] == "True"):
+			correlation_scale = self.settings['velocity_data']['model_err_corr']['correlationDistance']
+			cov = self.makeBaseCovMat(n_x,n_y,correlation_scale)
+			self.error_cov['model_vel'] = cov
+		else:
+			self.error_cov['model_vel'] = None
+	def makeBaseCovMat(self,nx,ny,corrdist):
+		X,Y = np.meshgrid(np.arange(nx),np.arange(ny))
+		# Create a vector of cells
+		XY = np.column_stack((np.ndarray.flatten(X),np.ndarray.flatten(Y)))
+		# Calculate a matrix of distances between the cells
+		dist = ssd.pdist(XY)
+		dist = ssd.squareform(dist)
+		# Convert the distance matrix into a covariance matrix
+		cov = np.exp(-dist**2/(2*corrdist)) # This will do as a covariance matrix
+		return cov
+	def getDistMat(self):
+		return self.distmat
+	def makeBaseField(self):
+		n_x = self.getSetting('n_x')
+		n_y = self.getSetting('n_y')
+		if self.settings["emis_field"]['interpret_as'] == 'location':
+			base_emis_field = np.zeros((n_x,n_y))
+			to_replace = self.settings["emis_field"]['value']
+			for loc,amp in zip(to_replace['location'],to_replace['value']):
+				base_emis_field[loc[0],loc[1]] = amp
+		elif self.settings["emis_field"]['interpret_as'] == 'function':
+			base_emis_field = eval(self.settings["emis_field"]['value'])
+		else:
+			raise ValueError('Could not interpret base field instructions.')
+		return base_emis_field
+	def makeVel(self, dimension,isModel):
+		veldata = self.getSetting('velocity_data')
+		if isModel:
+			useNoise = veldata['noisy_model'] == "True"
+			isNoiseCorrelated = veldata['model_err_corr']['useCorrelatedError'] == "True"
+			corrDist = veldata['model_err_corr']['correlationDistance']
+			cov = self.error_cov['model_vel']
+		else:
+			useNoise = veldata['noisy_nature'] == "True"
+			isNoiseCorrelated = veldata['nature_err_corr']['useCorrelatedError'] == "True"
+			corrDist = veldata['nature_err_corr']['correlationDistance']
+			cov = self.error_cov['nature_vel']
+		if veldata['function'] == 'vel':
+			if dimension == 'x':
+				maxval = veldata['parameters']["vel_x_max"]
+				if useNoise:
+					noise = veldata['parameters']["vel_x_noise"]
+				else:
+					noise = 0
+				timescale = veldata['parameters']["vel_x_timescale"]
+			elif dimension == 'y':
+				maxval = veldata['parameters']["vel_y_max"]
+				if useNoise:
+					noise = veldata['parameters']["vel_y_noise"]
+				else:
+					noise = 0
+				timescale = veldata['parameters']["vel_y_timescale"]
+			else:
+				raise ValueError('Dimension must be x or y')
+			if isNoiseCorrelated and useNoise:
+				n_x,n_y = self.getSetting(['n_x','n_y'])
+				noisefield = ss.multivariate_normal.rvs(mean = np.zeros(np.shape(cov)[0]),cov = (noise**2)*cov).reshape((n_x,n_y))
+				def vel(timestep,x,y):
+					return maxval*np.cos((timestep/timescale)*2*np.pi)+noisefield[x,y]
+			elif not isNoiseCorrelated and useNoise:
+				def vel(timestep,x,y):
+					return maxval*np.cos((timestep/timescale)*2*np.pi)+np.random.normal(0,noise)
+			else:
+				def vel(timestep,x,y):
+					return maxval*np.cos((timestep/timescale)*2*np.pi)
+			return vel
+		else:
+			raise ValueError('Velocity function unsupported')
+	def makeEmis(self, functype='full'):
+		if functype=='const':
+			def emis_t(timestep,base_field):
+				return base_field
+		elif functype=='full':
+			emis_variability,timescales,amps = self.getSetting(["emis_variability","emis_timescales","emis_amplitudes"])
+			timescales = np.array(timescales)
+			amps = np.array(amps)
+			normed_amps = amps/np.sum(amps)
+			def emis_t(timestep,base_field):
+				fourier_terms = 0
+				for timescale,amp in zip(timescales,normed_amps):
+					fourier_terms+=amp*np.sin((timestep/timescale)*2*np.pi)
+				return (emis_variability*base_field*fourier_terms)+base_field
+		elif type(functype) is int:
+			emis_variability,timescales,amps = self.getSetting(["emis_variability","emis_timescales","emis_amplitudes"])
+			timescales = np.array(timescales)[0:functype] #use only first fourier components
+			amps = np.array(amps)[0:functype]
+			normed_amps = amps/np.sum(amps)
+			def emis_t(timestep,base_field):
+				fourier_terms = 0
+				for timescale,amp in zip(timescales,normed_amps):
+					fourier_terms+=amp*np.sin((timestep/timescale)*2*np.pi)
+				return (emis_variability*base_field*fourier_terms)+base_field
+		return emis_t
+	def makeInitialEnsEmisFields(self, base_emis_field):
+		n_x,n_y,n_ens = self.getSetting(['n_x','n_y','n_ens'])
+		ensfields = []
+		for i in range(n_ens):
+			ensfields.append(base_emis_field*(np.random.rand(n_x,n_y)+0.5))
+			#ensfields.append(base_emis_field*(i+(n_ens/2))/n_ens)
+		self.initial_ens_std = np.std(np.stack(ensfields),axis=0)
+		return ensfields
+	def makeObsCorrelatedErrorField(self):
 
-#Velocity as a function of time
-def vel(timestep,timescale=100,maxval=10,noise=None):
-	if noise:
-		return maxval*np.cos((timestep/timescale)*2*np.pi)+(noise*((np.random.rand()*2)-1))
-	else:
-		return maxval*np.cos((timestep/timescale)*2*np.pi)
-
-
-def make_emis_t(emis_variability,emis_timescale_short,emis_timescale_long):
-	def emis_t(timestep,base_field):
-		return (emis_variability*base_field)*(np.sin((timestep/emis_timescale_short)*2*np.pi)+np.sin((timestep/emis_timescale_long)*2*np.pi))+base_field
-	return emis_t
-
-def const_emis_t(timestep,base_field):
-	return base_field
-
-#computes the next time step given matrices representing values at
-
-def makeInitialEnsEmisFields():
+def makeInitialEnsEmisFields(base_emis_field,setting_golem):
+	n_x = setting_golem.getSetting('n_x')
+	n_y = setting_golem.getSetting('n_y')
 	ensfields = []
 	for i in range(n_ens):
 		ensfields.append(base_emis_field*(np.random.rand(n_x,n_y)+0.5))
 		#ensfields.append(base_emis_field*(i+(n_ens/2))/n_ens)
 	return ensfields
 
-
-def run_with_assimilation(radius,inflation,scalingInflator,freq_obs,window,end_time,nature_vel_data,model_vel_data,nature_bias=0, nature_err=1,errtype='absolute',lifetime=500,nature_emis_func = None, model_emis_func = const_emis_t):
-	ensfields = makeInitialEnsEmisFields()
+def run_with_assimilation(setting_golem,halg='all'):
+	base_emis_field = setting_golem.makeBaseField()
+	ensfields = setting_golem.makeInitialEnsEmisFields(base_emis_field)
+	window,freq_obs,end_time = setting_golem.getSetting(['window',"frequency","endtime"])
 	tstart = 0
 	tend = window
 	cur_time = 0
@@ -63,15 +190,15 @@ def run_with_assimilation(radius,inflation,scalingInflator,freq_obs,window,end_t
 	emis_list.append(ensfields)
 	while cur_time < end_time:
 		print(f'Running model from {tstart} to {tend}')
-		nature,ensemble,timevals = compute_nature_and_ens(nature_vel_data=nature_vel_data,model_vel_data=model_vel_data,ens_emis_fields = ensfields, initial_conditions = initial_conditions, time_start = tstart, lifetime=lifetime, time_end=tend,nature_emis_func = nature_emis_func, model_emis_func = model_emis_func)
+		nature,ensemble,timevals = pt.compute_nature_and_ens(settings_golem=setting_golem,ens_emis_fields = ensfields,initial_conditions = initial_conditions,time_start = tstart, time_end=tend)
 		cur_time = tend
 		nature_list.append(nature)
 		ens_list.append(ensemble)
 		time_list.append(timevals)
 		obs_times = np.arange(tstart,tend,freq_obs)
-		assim = at.Assimilator(nature,ensemble,timevals, obs_times,ensfields,distmat,nature_bias=nature_bias,nature_err=nature_err)
+		assim = at.Assimilator(setting_golem,nature,ensemble,timevals, obs_times,ensfields,halg=halg)
 		print(f'Assimilating data at time {cur_time}')
-		ens_conc,ens_emis = assim.update(radius,inflation,scalingInflator)
+		ens_conc,ens_emis = assim.update()
 		ensfields = []
 		for i in range(np.shape(ens_emis)[0]):
 			ensfields.append(ens_emis[i,:,:])
@@ -86,6 +213,26 @@ def run_with_assimilation(radius,inflation,scalingInflator,freq_obs,window,end_t
 		emis_list[i] = np.stack(emis_list[i])
 	emis_list = np.stack(emis_list,axis=1)
 	return [nature_list,ens_list,emis_list,time_list]
+
+def make_emis_postprocess_plot(setting_golem,emis_list,time_list,xloc,yloc):
+	window,emisModel = settings_golem.getSetting(['window','emis_model_type'])
+	plottime = np.unique(time_list)
+	if useConstModel:
+		model_emis = np.repeat(emis_list[:,:,xloc,yloc],window,axis=1)
+	else:
+		model_emis = np.zeros((np.shape(emis_list)[0],len(plottime)))
+		emis_t_model = setting_golem.makeEmis(functype==emisModel)
+		timestamp = 0
+		for emisind in range(np.shape(emis_list)[1]-1):
+			timeend = timestamp+window
+			for ensnum in range(np.shape(emis_list)[0]):
+				timerange = np.arange(timestamp,timeend)
+				basefield = emis_list[ensnum,emisind,:,:]
+      			model_emis[ensnum,timestamp:timeend] = np.array([emis_t_model(t, basefield)[xloc,yloc] for t in timerange])
+    		timestamp = timeend
+    base_emis_field = setting_golem.makeBaseField()
+	emis_t = setting_golem.makeEmis(functype=='full')
+	nature_emis = np.array([emis_t(t, base_emis_field) for t in plottime])
 
 
 
