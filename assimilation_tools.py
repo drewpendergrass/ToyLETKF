@@ -2,22 +2,22 @@ import numpy as np
 import scipy.linalg as la
 import pickle
 import sys
+import skimage.util as ski
 
 
 #Observation operator class
 
 class Obs_Operator(object):
-	def __init__(self,nature,model_ens,timevals, obs_times, distmat, nature_bias=0, nature_err=1, halg = 'all',errtype='absolute',n_x=30,n_y=30):
+	def __init__(self,nature,model_ens,timevals, obs_times, distmat, settings_golem):
 		self.nature = nature
 		self.model_ens = model_ens
 		self.timevals = timevals
 		self.obs_times = obs_times
+		self.settings_golem = settings_golem
 		self.obs_time_inds = np.array([np.where(ot==self.timevals)[0][0] for ot in self.obs_times])
-		self.bias=nature_bias
-		self.err=nature_err
-		self.halg = halg
+		n_x,n_y,self.bias,self.err,self.halg = settings_golem.getSetting(['n_x','n_y','nature_bias','nature_err','halg'])
 		self.distmat = distmat
-		self.errtype = errtype
+		self.errtype = settings_golem.settings["nature_err"]["type"]
 		if self.halg=='all':
 			self.xinds = np.tile(np.arange(0,n_x),n_y)
 			self.yinds = np.repeat(np.arange(0,n_x),n_y)
@@ -31,7 +31,10 @@ class Obs_Operator(object):
 			self.yinds = np.array([val[1] for val in self.halg])
 		#Observations aggregated to grid of specified dimension
 		elif (type(self.halg) is list) and (type(self.halg[0]) is int):
-			pass
+			if (n_x % self.halg[0] == 0) and (n_y % self.halg[1] == 0):
+				self.aggregator,self.xinds,self.yinds = makeAggregator(n_x,n_y,self.halg[0],self.halg[1])
+			else:
+				raise ValueError('Observation grid does not partition advection-diffusion grid.')
 		self.obsMean,self.obsPert,self.obsDiff,self.obsErr=self.obsMeanPertDiff()
 	#Model ens has same times as in nature.
 	def obsMeanPertDiff(self):
@@ -52,19 +55,38 @@ class Obs_Operator(object):
 	def H(self,conc2D, allowErrors=False):
 		if self.halg=='all':
 			to_return = conc2D.flatten()
+			outshape = np.shape(conc2D)
 		if self.halg=='one':
 			to_return = np.array([np.mean(conc2D)])
+			outshape = (1,1)
 		if (type(self.halg) is list) and (type(self.halg[0]) is list):
 			to_return = conc2D[self.xinds,self.yinds]
+			outshape = np.shape(conc2D)
+		if (type(self.halg) is list) and (type(self.halg[0]) is int):
+			to_return = self.aggregator(conc2D)
+			outshape = (self.halg[0],self.halg[1])
 		if (self.bias is not None) and (self.err is not None) and allowErrors:
 			if self.errtype=='absolute':
-				errorvec = np.repeat(self.err, len(to_return))
-				to_return += np.random.normal(self.bias, self.err, np.shape(to_return))
+				noisefield = self.settings_golem.makeObsCorrelatedErrorField(self.bias, self.err, outshape = outshape)
+				if noisefield is None:
+					to_return += np.random.normal(self.bias, self.err, np.shape(to_return))
+				else:
+					if (type(self.halg) is list) and (type(self.halg[0]) is list):
+						to_return += noisefield[self.xinds,self.yinds]
+					else:
+						to_return += noisefield.flatten()
 			elif self.errtype=='relative':
 				biasvec = to_return*self.bias
 				errorvec = to_return*self.err
 				errorvec[errorvec<=0.01] = 0.01 #so that we can invert
-				to_return += np.random.normal(biasvec, errorvec, np.shape(to_return))
+				noisefield = self.settings_golem.makeObsCorrelatedErrorField(biasvec, errorvec,outshape = outshape)
+				if noisefield is None:
+					to_return += np.random.normal(biasvec, errorvec, np.shape(to_return))
+				else:
+					if (type(self.halg) is list) and (type(self.halg[0]) is list):
+						to_return += noisefield[self.xinds,self.yinds]
+					else:
+						to_return += noisefield.flatten()
 			else:
 				raise ValueError('Error type must be relative or absolute.')
 			to_return[to_return<0] = 0
@@ -79,14 +101,24 @@ class Obs_Operator(object):
 		matchinds = np.concatenate([np.where((xi==xindrep) & (yi==yindrep))[0] for xi,yi in zip(*inds_in_range)])
 		return [self.obsMean[matchinds],self.obsPert[:,matchinds],self.obsDiff[matchinds],self.obsErr[matchinds]]
 
+def makeAggregator(nx_big,ny_big,nx_small,ny_small):
+	X,Y = np.meshgrid(np.arange(nx_big),np.arange(ny_big),indexing='ij')
+	aggsize_x = int(nx_big/nx_small)
+	aggsize_y = int(ny_big/ny_small)
+	xinds = ski.view_as_blocks(X, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()
+	yinds = ski.view_as_blocks(Y, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()
+	def AggregateToObsGrid(observed_values):
+		return ski.view_as_blocks(observed_values, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()
+	return AggregateToObsGrid,xinds,yinds
+
+
 #Assimilator class
 
 class Assimilator(object):
 	def __init__(self,settings_golem,nature,model_ens,timevals, obs_times,emissions):
-		n_x,n_y,nature_bias,nature_err,halg = settings_golem.getSetting(['n_x','n_y','nature_bias','nature_err','halg'])
-		errtype = settings_golem.settings["nature_err"]["type"]
 		self.settings_golem = settings_golem
 		self.distmat = settings_golem.getDistMat()
+		n_x,n_y = settings_golem.getSetting(['n_x','n_y'])
 		self.xinds = np.tile(np.tile(np.arange(0,n_x),n_y),2) #flatten concentrations for first half, emissions
 		self.yinds = np.tile(np.repeat(np.arange(0,n_x),n_y),2)
 		emissions = np.stack(emissions)
@@ -97,8 +129,7 @@ class Assimilator(object):
 			background = np.concatenate([model_ens[i,-1,:,:].flatten(),emissions[i,:,:].flatten()])
 			self.ens_pert[i,:] = background-self.ens_mean
 			self.backgroundEnsemble[i,:] = background
-		self.nature_err = nature_err
-		self.obs_op = Obs_Operator(nature,model_ens,timevals, obs_times, self.distmat, nature_bias, nature_err, halg,errtype, n_x,n_y)
+		self.obs_op = Obs_Operator(nature,model_ens,timevals, obs_times, self.distmat, settings_golem)
 	def getMatchInds(self,radius,xind,yind):
 		inds_in_range = np.where(self.distmat[xind,yind,:,:]<=radius)
 		matchinds = np.concatenate([np.where((xi==self.xinds) & (yi==self.yinds))[0] for xi,yi in zip(*inds_in_range)])
@@ -115,6 +146,8 @@ class Assimilator(object):
 			for y in range(n_y):
 				matchinds,matchindcolfull,matchindcolsubset = self.getMatchInds(radius,x,y)
 				ensmean,enspert,backgroundEnsemble,obsmean,obspert,obsdiff,obserr = self.subsetByLoc(matchinds,radius,x,y)
+				if len(obserr)==0:
+					continue #skip this round, no observatons
 				R = np.diag(obserr**2)
 				R *= gamma**-1 #scale R by inverse gamma
 				C = obspert @ la.inv(R)
@@ -129,12 +162,11 @@ class Assimilator(object):
 				analysisEnsemble = np.zeros(np.shape(enspert))
 				for i in range(k):
 					analysisEnsemble[i,:] = np.transpose(enspert).dot(WAnalysis[:,i]) +ensmean
-				#Inflate scalings to the X percent of the background standard deviation, per Miyazaki et al 2015
+				#Inflate scalings to the X percent of the initial standard deviation, per Miyazaki et al 2015
 				if ~np.isnan(scalingInflator):
 					analysisScalefactor = np.copy(analysisEnsemble)[:,1::2] #odd entries are scale factors
-					backgroundScalefactor = np.copy(backgroundEnsemble)[:,1::2]
 					analysis_std = np.std(analysisScalefactor,axis=0)
-					background_std = np.std(backgroundScalefactor,axis=0)
+					background_std = self.settings_golem.initial_ens_std.flatten()[matchinds[matchinds<np.shape(self.ens_pert)[1]/2]] #Subset using the first half of matchinds 
 					ratio = np.empty(len(analysis_std))
 					ratio[:] = np.nan
 					nonzero = np.where(background_std!=0)[0]
@@ -142,9 +174,9 @@ class Assimilator(object):
 					whereToInflate = np.where(ratio<scalingInflator)[0] #nans show up as false, removed
 					if len(whereToInflate>0):
 						new_std = scalingInflator*background_std[whereToInflate]
-						for i in whereToInflate:
-							meanrebalance = np.mean(analysisScalefactor[:,i])*((new_std/analysis_std[i])-1)
-							analysisScalefactor[:,i] = analysisScalefactor[:,i]*(new_std/analysis_std[i])-meanrebalance
+						for ind, i in enumerate(whereToInflate):
+							meanrebalance = np.mean(analysisScalefactor[:,i])*((new_std[ind]/analysis_std[i])-1)
+							analysisScalefactor[:,i] = analysisScalefactor[:,i]*(new_std[ind]/analysis_std[i])-meanrebalance
 						analysisEnsemble[:,1::2] = analysisScalefactor
 				for i in range(k):
 					ens_analysis[i,matchindcolfull] = analysisEnsemble[i,matchindcolsubset]

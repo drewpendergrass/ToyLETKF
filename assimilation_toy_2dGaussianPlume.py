@@ -5,22 +5,12 @@ import sys
 import helper_tools as ht
 
 
-##TODO: rearrange for new structure
-
-base_emis_field = np.zeros((n_x,n_y))
-#base_emis_field = 10*np.random.rand(n_x,n_y)
-base_emis_field[14,14] = 10/delta_t
-#base_emis_field[9,9] = 10/delta_t
-#base_emis_field[9,19] = 5/delta_t
-#base_emis_field[19,9] = 15/delta_t
-#base_emis_field[19,19] = 25/delta_t
-
-
-
 
 
 windows_to_test = np.array([2,5,10,25,50,125])
-freq_obs_to_test = [[1],[1,2],[1,2,5],[2,5,10],[5,10,25],[10,25,50]]
+#freq_obs_to_test = [[1],[1,2],[1,2,5],[2,5,10],[5,10,25],[10,25,50]]
+freq_obs_to_test = [[1],[2],[5],[10],[25],[50]]
+gamma_
 #radii_to_test = np.array(1,2,5,10)
 radius = 5 
 #scaling_inflator_to_test = np.array([0.3,0.5,0.9])

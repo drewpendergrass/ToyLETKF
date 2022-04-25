@@ -88,7 +88,7 @@ def compute_ts(settings_golem, base_field,emis_func, isModel = False, initial_co
 def compute_nature_and_ens(settings_golem,ens_emis_fields,initial_conditions = None,time_start = 0, time_end=100):
 	base_emis_field = settings_golem.makeBaseField()
 	n_ens,emisModel = settings_golem.getSetting(['n_ens','emis_model_type'])
-	nature_emis_func = settings_golem.makeEmis(functype=='full')
+	nature_emis_func = settings_golem.makeEmis(functype='full')
 	model_emis_func = settings_golem.makeEmis(functype=emisModel)
 	if initial_conditions is None:
 		nature,timevals = compute_ts(settings_golem, base_emis_field,emis_func=nature_emis_func,isModel = False, initial_conditions = None, time_start = time_start, time_end=time_end)

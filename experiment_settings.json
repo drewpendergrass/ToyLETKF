@@ -32,10 +32,10 @@
 	"emis_field":{
 		"value":{
 			"location":[
-				[10,10],
-				[10,20],
-				[20,10],
-				[20,20]
+				[2,2],
+				[8,2],
+				[2,8],
+				[8,8]
 			],
 			"value":[
 				10,
@@ -49,7 +49,7 @@
 		"interpret_as" : "location"
 	},
 	"radius": {
-		"value":5,
+		"value":10,
 		"units":"h",
 		"description":"Radius for localized assimilation"
 	},
@@ -124,17 +124,17 @@
 		"description" : "fraction by which emis field varies relative to base"
 	},
 	"emis_model_type" : {
-		"value" : "False",
-		"units" : "bool",
-		"description" : "Should we use a constant emissions model ('const') or n fourier coefficients (int)?"
+		"value" : 1,
+		"units" : "nan",
+		"description" : "Should we use a constant emissions model ('const'), n fourier coefficients (int), or all fourier coeffients 'full'?"
 	},
 	"velocity_data" : {
 		"value" : {
-			"function" : "vel",
+			"function" : "const",
 			"parameters" : {
-				"vel_x_noise" : 2,
-				"vel_y_noise" : 1,
-				"vel_x_max" : 10,
+				"vel_x_noise" : 1,
+				"vel_y_noise" : 2,
+				"vel_x_max" : 5,
 				"vel_y_max" : 5,
 				"vel_x_timescale" : 100,
 				"vel_y_timescale" : 100
@@ -145,13 +145,13 @@
 		"noisy_nature" : "True",
 		"nature_err_corr" : {
 			"useCorrelatedError" : "True",
-			"correlationDistance" : 10,
+			"correlationDistance" : 10
 		},
 		"noisy_model" : "False",
 		"model_err_corr" : {
 			"useCorrelatedError" : "False",
-			"correlationDistance" : 10,
-		},
+			"correlationDistance" : 10
+		}
 	},
 	"inflation" : {
 		"value" : 0.2,
@@ -164,7 +164,7 @@
 		"description" : "End of simulation"
 	},
 	"halg" : {
-		"value" : "all",
+		"value" : [2,2],
 		"units" : "nan",
 		"description" : "name of H alg"
 	}
