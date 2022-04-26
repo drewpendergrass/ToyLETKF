@@ -64,12 +64,12 @@
 		"description":"Seconds between observation"
 	},
 	"scalingInflator": {
-		"value":0.3,
+		"value":0,
 		"units":"1",
 		"description":"Inflate scalings to X initial standard deviation"
 	},
 	"nature_err": {
-		"value":0.25,
+		"value":0.1,
 		"units":"1",
 		"description":"Error",
 		"type":"relative",
@@ -92,28 +92,20 @@
 		"description":"Species chemical lifetime in model runs"
 	},
 	"gamma": {
-		"value":0.1,
+		"value":1,
 		"units":"1",
 		"description":"Regularization constant"
 	},
 	"emis_timescales" : {
 		"value" : [
-			50,
-			40,
-			30,
-			20,
-			10
+			50
 		],
 		"units" : "delta t",
 		"description" : "Timescale of fourier components of emissions"
 	},
 	"emis_amplitudes" : {
 		"value" : [
-			5,
-			4,
-			3,
-			2,
-			1
+			5
 		],
 		"units" : "kg s^-1",
 		"description" : "Unweighted amplitude of each fourier component"
@@ -132,8 +124,8 @@
 		"value" : {
 			"function" : "const",
 			"parameters" : {
-				"vel_x_noise" : 1,
-				"vel_y_noise" : 2,
+				"vel_x_noise" : 0.5,
+				"vel_y_noise" : 0.5,
 				"vel_x_max" : 5,
 				"vel_y_max" : 5,
 				"vel_x_timescale" : 100,
@@ -142,7 +134,7 @@
 		},
 		"units":"nan",
 		"description" : "information necessary to construct velocity vector field",
-		"noisy_nature" : "True",
+		"noisy_nature" : "False",
 		"nature_err_corr" : {
 			"useCorrelatedError" : "True",
 			"correlationDistance" : 10

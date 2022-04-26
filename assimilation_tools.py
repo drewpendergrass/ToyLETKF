@@ -105,8 +105,8 @@ def makeAggregator(nx_big,ny_big,nx_small,ny_small):
 	X,Y = np.meshgrid(np.arange(nx_big),np.arange(ny_big),indexing='ij')
 	aggsize_x = int(nx_big/nx_small)
 	aggsize_y = int(ny_big/ny_small)
-	xinds = ski.view_as_blocks(X, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()
-	yinds = ski.view_as_blocks(Y, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()
+	xinds = np.round(ski.view_as_blocks(X, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()).astype(int)
+	yinds = np.round(ski.view_as_blocks(Y, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()).astype(int)
 	def AggregateToObsGrid(observed_values):
 		return ski.view_as_blocks(observed_values, (aggsize_x,aggsize_y)).mean(axis=(2,3)).flatten()
 	return AggregateToObsGrid,xinds,yinds
@@ -146,13 +146,16 @@ class Assimilator(object):
 			for y in range(n_y):
 				matchinds,matchindcolfull,matchindcolsubset = self.getMatchInds(radius,x,y)
 				ensmean,enspert,backgroundEnsemble,obsmean,obspert,obsdiff,obserr = self.subsetByLoc(matchinds,radius,x,y)
+				k = np.shape(obspert)[0]
 				if len(obserr)==0:
+					#overwrite with background, no observation available
+					for i in range(k):
+						ens_analysis[i,matchindcolfull] = backgroundEnsemble[i,matchindcolsubset]
 					continue #skip this round, no observatons
 				R = np.diag(obserr**2)
 				R *= gamma**-1 #scale R by inverse gamma
 				C = obspert @ la.inv(R)
 				cyb = C @ np.transpose(obspert)
-				k = np.shape(obspert)[0]
 				iden = (k-1)*np.identity(k)/(1+inflation)
 				PtildeAnalysis = la.inv(iden+cyb)
 				WAnalysis = la.sqrtm((k-1)*PtildeAnalysis)
